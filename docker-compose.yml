@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # Core Engine - Rust service for blockchain node management
+  core-engine:
+    build:
+      context: ./core-engine
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/twist_db
+      - REDIS_URL=redis://redis:6379
+      - ETHEREUM_NODE_URL=${ETHEREUM_NODE_URL}
+      - POLYGON_NODE_URL=${POLYGON_NODE_URL}
+      - ARBITRUM_NODE_URL=${ARBITRUM_NODE_URL}
+      - BSC_NODE_URL=${BSC_NODE_URL}
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # API Gateway - Go service
+  api-gateway:
+    build:
+      context: ./api-gateway
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=twist_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CORE_ENGINE_HOST=core-engine
+      - CORE_ENGINE_PORT=8080
+      - JWT_SECRET=${JWT_SECRET:-default_jwt_secret_for_development}
+    depends_on:
+      - db
+      - redis
+      - core-engine
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  # PostgreSQL database
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=twist_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./core-engine/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  # Redis cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data: 
